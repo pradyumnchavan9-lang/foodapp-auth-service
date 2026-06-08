@@ -9,9 +9,11 @@ import com.foodapp.authentication_service.enums.Role;
 import com.foodapp.authentication_service.exception.EmailAlreadyExistsException;
 import com.foodapp.authentication_service.exception.UserNotFoundException;
 import com.foodapp.authentication_service.model.User;
+import com.foodapp.authentication_service.model.UserRegisteredEvent;
 import com.foodapp.authentication_service.repository.UserRepository;
 import com.foodapp.authentication_service.security.JwtService;
 import jakarta.transaction.Transactional;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -26,13 +28,16 @@ public class AuthService {
     private final BCryptPasswordEncoder bCryptPasswordEncoder;
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
+    private final KafkaTemplate<String, UserRegisteredEvent> kafkaTemplate;
 
     public AuthService(UserRepository userRepository, BCryptPasswordEncoder bCryptPasswordEncoder,
-                       AuthenticationManager authenticationManager, JwtService jwtService) {
+                       AuthenticationManager authenticationManager, JwtService jwtService,
+                       KafkaTemplate<String, UserRegisteredEvent> kafkaTemplate) {
         this.userRepository = userRepository;
         this.bCryptPasswordEncoder = bCryptPasswordEncoder;
         this.authenticationManager = authenticationManager;
         this.jwtService = jwtService;
+        this.kafkaTemplate = kafkaTemplate;
     }
 
     @Transactional
@@ -47,6 +52,13 @@ public class AuthService {
         user.setPassword(bCryptPasswordEncoder.encode(request.getPassword()));
         user.setRole(Role.CUSTOMER);
         userRepository.save(user);
+
+        //publish to kafka
+        UserRegisteredEvent event = new UserRegisteredEvent();
+        event.setEmail(request.getEmail());
+        event.setRole(Role.CUSTOMER);
+        kafkaTemplate.send("user-registered", event);
+
 
         AuthResponse authResponse = new AuthResponse();
         authResponse.setToken(jwtService.generateToken(request.getEmail()));
